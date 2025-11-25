@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MiniMessenger — Вход</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .container { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.15); width: 100%; max-width: 420px; }
+      h1 { text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-top: 0; font-size: 28px; font-weight: 700; }
+      .form-group { margin-bottom: 18px; }
+      label { display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+      input { width: 100%; padding: 12px 14px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: #f8f9fa; transition: all 0.3s; }
+      input:focus { outline: none; background: white; border-color: #667eea; box-shadow: 0 0 8px rgba(102, 126, 234, 0.2); }
+      button { width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 700; margin-top: 12px; transition: all 0.3s; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+      button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+      .tabs { display: flex; gap: 0; margin-bottom: 28px; border-bottom: 2px solid #e0e0e0; }
+      .tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; color: #999; font-weight: 600; font-size: 13px; transition: all 0.3s; margin-bottom: -2px; }
+      .tab:hover { color: #667eea; }
+      .tab.active { border-bottom-color: #667eea; color: #667eea; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+      .error { color: #e74c3c; font-size: 12px; margin-top: 6px; font-weight: 500; }
+      .success { color: #27ae60; text-align: center; font-size: 14px; padding: 10px; background: #f0fdf4; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>MiniMessenger</h1>
+      
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('login')">Вход</div>
+        <div class="tab" onclick="switchTab('register')">Регистрация</div>
+      </div>
+
+      <div id="login" class="tab-content active">
+        <div class="form-group">
+          <label>Логин</label>
+          <input id="loginUser" type="text" placeholder="Введите логин" />
+          <div class="error" id="loginUserErr"></div>
+        </div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input id="loginPass" type="password" placeholder="Введите пароль" />
+          <div class="error" id="loginPassErr"></div>
+        </div>
+        <button onclick="doLogin()">Войти</button>
+        <div id="loginMsg" class="error"></div>
+      </div>
+
+      <div id="register" class="tab-content">
+        <div class="form-group">
+          <label>Логин</label>
+          <input id="regUser" type="text" placeholder="Выберите логин" />
+          <div class="error" id="regUserErr"></div>
+        </div>
+        <div class="form-group">
+          <label>Отображаемое имя (опционально)</label>
+          <input id="regDisplay" type="text" placeholder="Ваше имя" />
+        </div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input id="regPass" type="password" placeholder="Минимум 6 символов" />
+          <div class="error" id="regPassErr"></div>
+        </div>
+        <button onclick="doRegister()">Зарегистрироваться</button>
+        <div id="regMsg" class="error"></div>
+      </div>
+    </div>
+
+    <script>
+      function switchTab(tab) {
+        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(e => e.classList.remove('active'));
+        document.getElementById(tab).classList.add('active');
+        event.target.classList.add('active');
+      }
+
+      async function doLogin() {
+        const user = document.getElementById('loginUser').value.trim();
+        const pass = document.getElementById('loginPass').value;
+        document.getElementById('loginMsg').textContent = '';
+        if (!user) { document.getElementById('loginUserErr').textContent = 'Введите логин'; return; }
+        if (!pass) { document.getElementById('loginPassErr').textContent = 'Введите пароль'; return; }
+        document.getElementById('loginUserErr').textContent = '';
+        document.getElementById('loginPassErr').textContent = '';
+        
+        try {
+          const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+          const data = await res.json();
+          if (data.ok) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/index.html';
+          } else {
+            document.getElementById('loginMsg').textContent = 'Ошибка: ' + (data.error || 'Неверные данные');
+          }
+        } catch (e) {
+          document.getElementById('loginMsg').textContent = 'Ошибка сети: ' + e.message;
+        }
+      }
+
+      async function doRegister() {
+        const user = document.getElementById('regUser').value.trim();
+        const pass = document.getElementById('regPass').value;
+        const display = document.getElementById('regDisplay').value.trim();
+        document.getElementById('regMsg').textContent = '';
+        if (!user) { document.getElementById('regUserErr').textContent = 'Введите логин'; return; }
+        if (user.length < 3) { document.getElementById('regUserErr').textContent = 'Логин минимум 3 символа'; return; }
+        if (!pass || pass.length < 6) { document.getElementById('regPassErr').textContent = 'Пароль минимум 6 символов'; return; }
+        document.getElementById('regUserErr').textContent = '';
+        document.getElementById('regPassErr').textContent = '';
+        
+        try {
+          const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass, display: display || user }) });
+          const data = await res.json();
+          if (data.ok) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/index.html';
+          } else {
+            document.getElementById('regMsg').textContent = 'Ошибка: ' + (data.error || 'Не удалось зарегистрироваться');
+          }
+        } catch (e) {
+          document.getElementById('regMsg').textContent = 'Ошибка сети: ' + e.message;
+        }
+      }
+
+      // Check if already logged in
+      (async function() {
+        try {
+          const res = await fetch('/api/me');
+          const data = await res.json();
+          if (data.user) {
+            window.location.href = '/index.html';
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </body>
+</html>

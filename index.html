@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MiniMessenger</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+      .app { display: flex; height: 100vh; }
+      .sidebar { width: 320px; background: #ffffff; border-right: 1px solid #e0e0e0; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.05); }
+      .profile { padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-bottom: 1px solid #e0e0e0; }
+      .profile .name { font-weight: 700; color: #ffffff; font-size: 14px; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+      .profile .logout { display: block; margin-top: 8px; color: #ffffff; cursor: pointer; font-size: 12px; opacity: 0.9; transition: opacity 0.2s; }
+      .profile .logout:hover { opacity: 1; text-decoration: underline; }
+      .search { padding: 12px; border-bottom: 1px solid #e0e0e0; }
+      .search input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 24px; font-size: 13px; background: #f5f5f5; transition: all 0.2s; }
+      .search input:focus { outline: none; background: white; border-color: #667eea; box-shadow: 0 0 6px rgba(102, 126, 234, 0.2); }
+      .friends { flex: 1; overflow-y: auto; }
+      .friends-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 12px 8px; }
+      .friends h3 { margin: 0; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+      .refresh-btn { background: none; border: none; cursor: pointer; color: #667eea; font-size: 18px; padding: 4px; transition: all 0.3s; border-radius: 50%; }
+      .refresh-btn:hover { color: #764ba2; background: #f0f0f0; transform: rotate(180deg); }
+      .friends-list { list-style: none; padding: 0; margin: 0; }
+      .friend-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: all 0.2s; position: relative; }
+      .friend-item:hover { background: #f8f9fa; }
+      .friend-item.active { background: linear-gradient(to right, #e7f3ff, #ffffff); border-left: 4px solid #667eea; padding-left: 8px; }
+      .main { flex: 1; display: flex; flex-direction: column; background: white; }
+      .chat-header { padding: 16px 20px; background: white; border-bottom: 1px solid #e0e0e0; font-weight: 600; color: #222; font-size: 15px; }
+      .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #f8f9fa; }
+      .msg { max-width: 60%; padding: 10px 14px; border-radius: 12px; word-wrap: break-word; font-size: 14px; line-height: 1.4; }
+      .msg.in { background: white; align-self: flex-start; border: 1px solid #e0e0e0; color: #222; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+      .msg.out { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; align-self: flex-end; box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3); }
+      .msg-time { font-size: 11px; opacity: 0.6; margin-top: 4px; }
+      .composer { padding: 14px; background: white; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; }
+      .composer input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 24px; font-size: 14px; background: #f5f5f5; transition: all 0.2s; }
+      .composer input:focus { outline: none; background: white; border-color: #667eea; box-shadow: 0 0 6px rgba(102, 126, 234, 0.2); }
+      .composer button { padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 24px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.3s; box-shadow: 0 2px 6px rgba(102, 126, 234, 0.2); }
+      .composer button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="profile">
+          <div class="name" id="profileName"></div>
+          <div class="logout" onclick="doLogout()">Выйти</div>
+        </div>
+        <div class="search">
+          <input id="searchInput" placeholder="Поиск пользователей..." />
+        </div>
+        <div class="friends">
+          <div class="friends-header">
+            <h3>Друзья</h3>
+            <button class="refresh-btn" id="refreshFriendsBtn" title="Обновить список друзей">🔄</button>
+          </div>
+          <ul class="friends-list" id="friendsList"></ul>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="chat-header" id="chatHeader">Выберите чат</div>
+        <div class="messages" id="messages"></div>
+        <div class="composer">
+          <input id="msgInput" placeholder="Введите сообщение..." />
+          <button id="refreshMsgsBtn" class="refresh-msgs" title="Обновить сообщения">🔄</button>
+          <button id="sendBtn">Отправить</button>
+        </div>
+      </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      let currentUser = null;
+      let currentChat = null;
+      let socket = null;
+      let pollInterval = null;
+
+      async function init() {
+        try {
+          const res = await fetch('/api/me');
+          const data = await res.json();
+          if (!data.user) {
+            window.location.href = '/auth.html';
+            return;
+          }
+          currentUser = data.user;
+          document.getElementById('profileName').textContent = currentUser.display + ' (' + currentUser.username + ')';
+          connectSocket();
+          await loadFriends();
+          setupEventListeners();
+          startSearchListener();
+        } catch (e) {
+          console.error(e);
+          window.location.href = '/auth.html';
+        }
+      }
+
+      function connectSocket() {
+        // Connect without username query; server will use session from cookie
+        socket = io();
+        socket.on('message', (m) => {
+          if (currentChat === m.from || currentChat === m.to) {
+            appendMessage(m);
+          }
+        });
+        socket.on('error', (e) => {
+          // show server-side socket errors to user
+          console.warn('Socket error:', e);
+          alert(e);
+        });
+        socket.on('disconnect', () => console.log('Socket disconnected'));
+      }
+
+      async function loadFriends() {
+        try {
+          const res = await fetch('/api/friends');
+          const data = await res.json();
+          const list = document.getElementById('friendsList');
+          list.innerHTML = '';
+          for (const f of (data.friends || [])) {
+            const li = document.createElement('li');
+            li.className = 'friend-item';
+            li.textContent = f.username;
+            li.onclick = () => selectChat(f.username, li);
+            list.appendChild(li);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      function setupEventListeners() {
+        document.getElementById('sendBtn').onclick = async () => {
+          const text = document.getElementById('msgInput').value.trim();
+          if (!currentChat) {
+            alert('Выберите чат');
+            return;
+          }
+          if (!text) return;
+          
+          socket.emit('message', { to: currentChat, text });
+          document.getElementById('msgInput').value = '';
+        };
+
+        document.getElementById('msgInput').onkeypress = (e) => {
+          if (e.key === 'Enter') document.getElementById('sendBtn').click();
+        };
+
+        document.getElementById('refreshFriendsBtn').onclick = async () => {
+          await loadFriends();
+        };
+
+        const refreshBtn = document.getElementById('refreshMsgsBtn');
+        if (refreshBtn) {
+          refreshBtn.onclick = async () => {
+            // quick visual feedback
+            refreshBtn.classList.add('active');
+            await loadMessages();
+            setTimeout(() => refreshBtn.classList.remove('active'), 400);
+          };
+        }
+      }
+
+      function startSearchListener() {
+        document.getElementById('searchInput').addEventListener('input', debounce(async (e) => {
+          const q = e.target.value.trim();
+          if (!q) {
+            await loadFriends();
+            return;
+          }
+          
+          try {
+            const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+            const data = await res.json();
+            const list = document.getElementById('friendsList');
+            list.innerHTML = '';
+            for (const u of (data.results || [])) {
+              const li = document.createElement('li');
+              li.className = 'friend-item';
+              li.textContent = u.display || u.username;
+              const addBtn = document.createElement('button');
+              addBtn.textContent = '+';
+              addBtn.style.cssText = 'float: right; width: 24px; height: 24px; padding: 0; background: #667eea; color: white; border: none; border-radius: 50%; cursor: pointer;';
+              addBtn.onclick = async (e) => {
+                e.stopPropagation();
+                try {
+                  const res = await fetch('/api/friends/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u.username }) });
+                  const data = await res.json();
+                  if (data.ok) {
+                    alert('Добавлено в друзья');
+                    await loadFriends();
+                  } else {
+                    alert('Ошибка: ' + (data.error || 'не удалось добавить'));
+                  }
+                } catch (e) {
+                  alert('Ошибка сети');
+                }
+              };
+              li.appendChild(addBtn);
+              li.style.display = 'flex';
+              li.style.justifyContent = 'space-between';
+              li.style.alignItems = 'center';
+              li.onclick = (e) => {
+                if (e.target !== addBtn) selectChat(u.username, li);
+              };
+              list.appendChild(li);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }, 300));
+      }
+
+      function debounce(fn, delay) {
+        let timeout;
+        return (...args) => {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => fn(...args), delay);
+        };
+      }
+
+      async function selectChat(username, element) {
+        currentChat = username;
+        document.querySelectorAll('.friend-item').forEach(e => e.classList.remove('active'));
+        if (element) element.classList.add('active');
+        
+        document.getElementById('chatHeader').textContent = 'Чат с ' + username;
+        
+        // Clear messages and load fresh
+        document.getElementById('messages').innerHTML = '';
+        await loadMessages();
+        startMessagePolling();
+      }
+
+      async function loadMessages() {
+        if (!currentChat) return;
+        try {
+          const res = await fetch('/api/messages/' + encodeURIComponent(currentChat));
+          const data = await res.json();
+          const container = document.getElementById('messages');
+          
+          // Get existing message IDs to avoid duplicates
+          const existingIds = new Set();
+          container.querySelectorAll('[data-msg-id]').forEach(el => {
+            existingIds.add(el.getAttribute('data-msg-id'));
+          });
+          
+          for (const m of (data.messages || [])) {
+            if (!existingIds.has(m.id)) {
+              appendMessage(m);
+              existingIds.add(m.id);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      function appendMessage(m) {
+        const container = document.getElementById('messages');
+        
+        // Check if message already exists
+        if (container.querySelector(`[data-msg-id="${m.id}"]`)) return;
+        
+        const div = document.createElement('div');
+        div.className = 'msg ' + (m.from === currentUser.username ? 'out' : 'in');
+        div.setAttribute('data-msg-id', m.id);
+        const time = m.ts ? new Date(m.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+        div.innerHTML = `<div>${escapeHtml(m.text)}</div><div class="msg-time">${time}</div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function startMessagePolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        // Poll every 1 second for new messages
+        pollInterval = setInterval(() => {
+          if (currentChat) {
+            loadMessages();
+          }
+        }, 1000);
+      }
+
+      async function doLogout() {
+        try {
+          await fetch('/api/logout', { method: 'POST' });
+          localStorage.removeItem('user');
+          window.location.href = '/auth.html';
+        } catch (e) {
+          console.error(e);
+          window.location.href = '/auth.html';
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

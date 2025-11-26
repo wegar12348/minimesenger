@@ -88,7 +88,15 @@
         
         try {
           const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
-          const data = await res.json();
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.error('Invalid JSON response:', text);
+            document.getElementById('loginMsg').textContent = 'Ошибка сервера: неверный ответ';
+            return;
+          }
           if (data.ok) {
             localStorage.setItem('user', JSON.stringify(data.user));
             window.location.href = '/index.html';
@@ -113,7 +121,15 @@
         
         try {
           const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass, display: display || user }) });
-          const data = await res.json();
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.error('Invalid JSON response:', text);
+            document.getElementById('regMsg').textContent = 'Ошибка сервера: неверный ответ';
+            return;
+          }
           if (data.ok) {
             localStorage.setItem('user', JSON.stringify(data.user));
             window.location.href = '/index.html';

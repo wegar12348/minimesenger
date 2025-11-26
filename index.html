@@ -79,7 +79,15 @@
       async function init() {
         try {
           const res = await fetch('/api/me');
-          const data = await res.json();
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.error('Invalid JSON response from /api/me:', text);
+            window.location.href = '/auth.html';
+            return;
+          }
           if (!data.user) {
             window.location.href = '/auth.html';
             return;

@@ -69,6 +69,12 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, socket.request.res || {}, next);
 });
 
+// Simple request logger to help diagnose missing static files on hosts like Render
+app.use((req, res, next) => {
+  console.log(`HTTP ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, '')));
 
 // Ensure admin page is always reachable even if static serving behaves differently on host

@@ -1,12 +1,7 @@
 services:
   - type: web
     name: minimessenger
-    runtime: node
+    env: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 3000
+    buildCommand: "npm install"
+    startCommand: "npm start"

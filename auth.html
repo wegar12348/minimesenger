@@ -23,6 +23,27 @@
       .tab-content.active { display: block; }
       .error { color: #e74c3c; font-size: 12px; margin-top: 6px; font-weight: 500; }
       .success { color: #27ae60; text-align: center; font-size: 14px; padding: 10px; background: #f0fdf4; border-radius: 6px; }
+      
+        @media (max-width: 768px) {
+          .container { padding: 30px 20px; margin: 20px; border-radius: 12px; }
+          h1 { font-size: 24px; }
+          .form-group { margin-bottom: 14px; }
+          input { padding: 10px 12px; font-size: 13px; }
+          button { padding: 10px; font-size: 13px; margin-top: 10px; }
+          .tab { padding: 10px; font-size: 12px; }
+          label { font-size: 12px; }
+        }
+      
+        @media (max-width: 480px) {
+          body { height: 100dvh; }
+          .container { padding: 20px; margin: 10px; }
+          h1 { font-size: 22px; margin-bottom: 20px; }
+          .form-group { margin-bottom: 12px; }
+          input { padding: 8px 10px; font-size: 12px; }
+          button { padding: 8px; font-size: 12px; }
+          .tab { padding: 8px; font-size: 11px; }
+          .error { font-size: 11px; }
+        }
     </style>
   </head>
   <body>

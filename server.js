@@ -3,24 +3,36 @@ const http = require('http');
 const { Server } = require('socket.io');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const fs = require('fs');
+const mongoose = require('mongoose');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
-const DATA_FILE = path.join(__dirname, 'data.json');
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/minimessenger';
+mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('✓ MongoDB connected'))
+  .catch(err => console.error('✗ MongoDB connection error:', err.message));
 
-function loadData() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
-    return { users: [], messages: [] };
-  }
-}
+// Define schemas
+const userSchema = new mongoose.Schema({
+  id: { type: String, unique: true, default: () => uuidv4() },
+  username: { type: String, unique: true, required: true },
+  password: { type: String, required: true },
+  display: { type: String, default: '' },
+  friends: [String]
+}, { timestamps: true });
 
-function saveData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
+const messageSchema = new mongoose.Schema({
+  id: { type: String, unique: true, default: () => uuidv4() },
+  from: String,
+  to: String,
+  text: String,
+  ts: { type: Number, default: Date.now }
+}, { timestamps: true });
+
+const User = mongoose.model('User', userSchema);
+const Message = mongoose.model('Message', messageSchema);
 
 const app = express();
 const server = http.createServer(app);
@@ -46,33 +58,41 @@ io.use((socket, next) => {
 app.use(express.static(path.join(__dirname, '')));
 
 // Helper: find user by username
-function findUser(data, username) {
-  return data.users.find(u => u.username === username);
+async function findUser(username) {
+  return await User.findOne({ username });
 }
 
-app.post('/api/register', (req, res) => {
-  const { username, password, display } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'username/password required' });
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, password, display } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'username/password required' });
 
-  const data = loadData();
-  if (data.users.some(u => u.username === username)) return res.status(400).json({ error: 'user exists' });
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(400).json({ error: 'user exists' });
 
-  const hashed = bcrypt.hashSync(password, 8);
-  const user = { id: uuidv4(), username, password: hashed, display: display || username, friends: [] };
-  data.users.push(user);
-  saveData(data);
-  req.session.user = { id: user.id, username: user.username, display: user.display };
-  res.json({ ok: true, user: req.session.user });
+    const hashed = bcrypt.hashSync(password, 8);
+    const user = new User({ username, password: hashed, display: display || username, friends: [] });
+    await user.save();
+
+    req.session.user = { id: user.id, username: user.username, display: user.display };
+    res.json({ ok: true, user: req.session.user });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  const data = loadData();
-  const user = findUser(data, username);
-  if (!user) return res.status(400).json({ error: 'invalid' });
-  if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'invalid' });
-  req.session.user = { id: user.id, username: user.username, display: user.display };
-  res.json({ ok: true, user: req.session.user });
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await findUser(username);
+    if (!user) return res.status(400).json({ error: 'invalid' });
+    if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'invalid' });
+
+    req.session.user = { id: user.id, username: user.username, display: user.display };
+    res.json({ ok: true, user: req.session.user });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/logout', (req, res) => {
@@ -84,99 +104,131 @@ app.get('/api/me', (req, res) => {
 });
 
 // Search users by substring
-app.get('/api/search', (req, res) => {
-  const q = (req.query.q || '').toLowerCase();
-  const data = loadData();
-  const list = data.users
-    .filter(u => u.username.toLowerCase().includes(q) || (u.display || '').toLowerCase().includes(q))
-    .map(u => ({ id: u.id, username: u.username, display: u.display }));
-  res.json({ results: list });
+app.get('/api/search', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toLowerCase();
+    const list = await User.find({
+      $or: [
+        { username: { $regex: q, $options: 'i' } },
+        { display: { $regex: q, $options: 'i' } }
+      ]
+    }).select('id username display');
+    res.json({ results: list });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Add friend
-app.post('/api/friends/add', (req, res) => {
-  const me = req.session.user; if (!me) return res.status(401).json({ error: 'auth' });
-  const { username } = req.body;
-  const data = loadData();
-  const user = findUser(data, username);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const meRec = data.users.find(u => u.id === me.id);
-  if (!meRec) return res.status(404).json({ error: 'user not found' });
-  // Add friend to me
-  if (!meRec.friends.includes(user.username)) meRec.friends.push(user.username);
-  // Add me to friend (bilateral friendship)
-  if (!user.friends.includes(meRec.username)) user.friends.push(meRec.username);
-  saveData(data);
-  res.json({ ok: true, friends: meRec.friends });
+app.post('/api/friends/add', async (req, res) => {
+  try {
+    const me = req.session.user;
+    if (!me) return res.status(401).json({ error: 'auth' });
+
+    const { username } = req.body;
+    const friend = await findUser(username);
+    if (!friend) return res.status(404).json({ error: 'not found' });
+
+    const meRec = await User.findOne({ id: me.id });
+    if (!meRec) return res.status(404).json({ error: 'user not found' });
+
+    // Add friend to me
+    if (!meRec.friends.includes(friend.username)) meRec.friends.push(friend.username);
+    // Add me to friend (bilateral)
+    if (!friend.friends.includes(meRec.username)) friend.friends.push(meRec.username);
+
+    await meRec.save();
+    await friend.save();
+
+    res.json({ ok: true, friends: meRec.friends });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.get('/api/friends', (req, res) => {
-  const me = req.session.user; if (!me) return res.status(401).json({ error: 'auth' });
-  const data = loadData();
-  const meRec = data.users.find(u => u.id === me.id);
-  if (!meRec) return res.status(404).json({ error: 'user not found' });
-  const friends = (meRec.friends || []).map(name => ({ username: name }));
-  res.json({ friends });
+app.get('/api/friends', async (req, res) => {
+  try {
+    const me = req.session.user;
+    if (!me) return res.status(401).json({ error: 'auth' });
+
+    const meRec = await User.findOne({ id: me.id });
+    if (!meRec) return res.status(404).json({ error: 'user not found' });
+
+    const friends = (meRec.friends || []).map(name => ({ username: name }));
+    res.json({ friends });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.get('/api/messages/:peer', (req, res) => {
-  const me = req.session.user; if (!me) return res.status(401).json({ error: 'auth' });
-  const peer = req.params.peer;
-  const data = loadData();
-  const msgs = data.messages.filter(m => (m.from === me.username && m.to === peer) || (m.from === peer && m.to === me.username));
-  res.json({ messages: msgs });
+app.get('/api/messages/:peer', async (req, res) => {
+  try {
+    const me = req.session.user;
+    if (!me) return res.status(401).json({ error: 'auth' });
+
+    const peer = req.params.peer;
+    const msgs = await Message.find({
+      $or: [
+        { from: me.username, to: peer },
+        { from: peer, to: me.username }
+      ]
+    }).sort({ ts: 1 });
+
+    res.json({ messages: msgs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Socket.io for real-time messages
 io.on('connection', (socket) => {
-  // Ensure session exists on socket
   const sess = socket.request && socket.request.session;
   if (!sess || !sess.user) {
     console.log('socket connection without session - disconnect');
     socket.disconnect(true);
     return;
   }
+
   const username = sess.user.username;
   socket.username = username;
   console.log('socket connected', username);
 
-  socket.on('message', (payload) => {
-    // payload: { to, text }
-    const data = loadData();
-    const senderRec = data.users.find(u => u.username === username);
-    const recipientRec = data.users.find(u => u.username === payload.to);
+  socket.on('message', async (payload) => {
+    try {
+      const senderRec = await findUser(username);
+      const recipientRec = await findUser(payload.to);
 
-    // Check if both users exist and are friends
-    if (!senderRec || !recipientRec) {
-      socket.emit('error', 'User not found');
-      return;
-    }
-    if (!senderRec.friends.includes(payload.to) || !recipientRec.friends.includes(username)) {
-      socket.emit('error', 'Not friends');
-      return;
-    }
+      if (!senderRec || !recipientRec) {
+        socket.emit('error', 'User not found');
+        return;
+      }
 
-    const msg = { id: uuidv4(), from: username, to: payload.to, text: payload.text, ts: Date.now() };
-    data.messages.push(msg);
-    saveData(data);
+      if (!senderRec.friends.includes(payload.to) || !recipientRec.friends.includes(username)) {
+        socket.emit('error', 'Not friends');
+        return;
+      }
 
-    // emit to recipient if connected
-    for (const [id, s] of Object.entries(io.sockets.sockets)) {
-      if (s.username === payload.to) s.emit('message', msg);
+      const msg = new Message({ from: username, to: payload.to, text: payload.text });
+      await msg.save();
+
+      // emit to recipient if connected
+      for (const [id, s] of Object.entries(io.sockets.sockets)) {
+        if (s.username === payload.to) s.emit('message', msg);
+      }
+      // ack to sender
+      socket.emit('message', msg);
+    } catch (e) {
+      socket.emit('error', e.message);
     }
-    // ack to sender
-    socket.emit('message', msg);
   });
 
   socket.on('disconnect', () => {
-    // noop
+    console.log('socket disconnected', username);
   });
 });
 
-// Initialize data.json if it doesn't exist
-if (!fs.existsSync(DATA_FILE)) {
-  saveData({ users: [], messages: [] });
-}
-
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log('Server started on', PORT));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Server started on http://localhost:${PORT}`);
+  console.log(`📱 Access from phone: http://<your-ip>:${PORT}\n`);
+});

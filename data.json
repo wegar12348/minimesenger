@@ -1,38 +1,4 @@
 {
-  "users": [
-    {
-      "id": "595cf976-b4f1-41f1-b6fc-63c2192cc438",
-      "username": "Rudolf",
-      "password": "$2a$08$321ieN4mdtt9z2Cr5Z/cLeOXUA3yrsURjZKrfSCVMSvheUPmhYQA6",
-      "display": "RUD01f",
-      "friends": [
-        "wegar"
-      ]
-    },
-    {
-      "id": "0336f02c-265c-4358-85a7-9dfd30236150",
-      "username": "wegar",
-      "password": "$2a$08$.p.qNFNCndohwDwX9X1iPu8kPKr2wGhh7hrdL9O6ok718nOPKU0By",
-      "display": "RUD",
-      "friends": [
-        "Rudolf"
-      ]
-    }
-  ],
-  "messages": [
-    {
-      "id": "94093a9c-96da-4adc-811d-df886a7c543c",
-      "from": "Rudolf",
-      "to": "wegar",
-      "text": "w",
-      "ts": 1764052422194
-    },
-    {
-      "id": "9d50dca0-75c2-4aa5-81a9-e31ffeb9213f",
-      "from": "wegar",
-      "to": "Rudolf",
-      "text": "w",
-      "ts": 1764052573607
-    }
-  ]
+  "users": [],
+  "messages": []
 }

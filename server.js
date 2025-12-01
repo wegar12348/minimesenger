@@ -20,6 +20,7 @@ const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   display: { type: String, default: '' },
+  isAdmin: { type: Boolean, default: false },
   friends: [String]
 }, { timestamps: true });
 
@@ -33,6 +34,19 @@ const messageSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 const Message = mongoose.model('Message', messageSchema);
+
+// Ensure a default admin user exists (username: min, password: 1248) - only creates if missing
+(async function ensureAdmin(){
+  try{
+    const existing = await User.findOne({ username: 'min' });
+    if (!existing) {
+      const hashed = bcrypt.hashSync('1248', 8);
+      const u = new User({ username: 'min', password: hashed, display: 'admin', friends: [], isAdmin: true });
+      await u.save();
+      console.log('Default admin user created: min');
+    }
+  }catch(e){ console.error('ensureAdmin error', e.message); }
+})();
 
 const app = express();
 const server = http.createServer(app);
@@ -178,6 +192,120 @@ app.get('/api/messages/:peer', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Admin helpers
+function requireAdmin(req, res) {
+  const me = req.session.user;
+  if (!me) return res.status(401).json({ error: 'auth' });
+  return User.findOne({ id: me.id }).then(u => {
+    if (!u || !u.isAdmin) return null;
+    return u;
+  });
+}
+
+// List all users (admin only)
+app.get('/api/admin/users', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const users = await User.find().select('id username display isAdmin');
+    res.json({ users });
+  }catch(e){ res.status(500).json({ error: e.message }); }
+});
+
+// Delete user (admin only)
+app.post('/api/admin/users/:username/delete', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const username = req.params.username;
+    const removed = await User.findOneAndDelete({ username });
+    if (!removed) return res.status(404).json({ error: 'not found' });
+    // remove from friends lists
+    await User.updateMany({}, { $pull: { friends: username } });
+    // Optionally remove messages involving that user
+    await Message.deleteMany({ $or: [ { from: username }, { to: username } ] });
+    res.json({ ok: true });
+  }catch(e){ res.status(500).json({ error: e.message }); }
+});
+
+// Update user (admin only) - change display or username
+app.post('/api/admin/users/:username/update', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const username = req.params.username;
+    const { newUsername, display } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'not found' });
+    const oldUsername = user.username;
+    if (display) user.display = display;
+    if (newUsername && newUsername !== oldUsername) {
+      // ensure unique
+      const exists = await User.findOne({ username: newUsername });
+      if (exists) return res.status(400).json({ error: 'username exists' });
+      user.username = newUsername;
+      // update friends lists
+      await User.updateMany({ friends: oldUsername }, { $set: { 'friends.$': newUsername } });
+      // update messages
+      await Message.updateMany({ from: oldUsername }, { $set: { from: newUsername } });
+      await Message.updateMany({ to: oldUsername }, { $set: { to: newUsername } });
+    }
+    await user.save();
+    res.json({ ok: true, user: { id: user.id, username: user.username, display: user.display } });
+  }catch(e){ res.status(500).json({ error: e.message }); }
+});
+
+// Reset password (admin only)
+app.post('/api/admin/users/:username/reset-password', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const username = req.params.username;
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'password required' });
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'not found' });
+    user.password = bcrypt.hashSync(password, 8);
+    await user.save();
+    res.json({ ok: true });
+  }catch(e){ res.status(500).json({ error: e.message }); }
+});
+
+// Impersonate: set current session to target user (admin only)
+app.post('/api/admin/impersonate/:username', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const username = req.params.username;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'not found' });
+    req.session.user = { id: user.id, username: user.username, display: user.display };
+    res.json({ ok: true, user: req.session.user });
+  }catch(e){ res.status(500).json({ error: e.message }); }
+});
+
+// Send message as another user (admin only)
+app.post('/api/admin/send-as/:username', async (req, res) => {
+  try{
+    const admin = await requireAdmin(req, res);
+    if (!admin) return res.status(403).json({ error: 'forbidden' });
+    const username = req.params.username; // from
+    const { to, text } = req.body;
+    if (!to || !text) return res.status(400).json({ error: 'to/text required' });
+    const sender = await User.findOne({ username });
+    const recipient = await User.findOne({ username: to });
+    if (!sender || !recipient) return res.status(404).json({ error: 'user not found' });
+    // create message
+    const msg = new Message({ from: sender.username, to: recipient.username, text });
+    await msg.save();
+    // emit to recipient socket if connected
+    for (const [id, s] of Object.entries(io.sockets.sockets)) {
+      if (s.username === recipient.username) s.emit('message', msg);
+    }
+    res.json({ ok: true, message: msg });
+  }catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // Socket.io for real-time messages

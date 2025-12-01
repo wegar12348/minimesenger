@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h1 { margin-bottom: 20px; color: #333; }
+    .auth { margin-bottom: 30px; padding: 20px; background: #f9f9f9; border-radius: 4px; }
+    .auth input { padding: 10px; margin-right: 10px; width: 200px; border: 1px solid #ddd; border-radius: 4px; }
+    .auth button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .auth button:hover { background: #0056b3; }
+    .status { padding: 10px; margin-bottom: 10px; border-radius: 4px; font-weight: bold; }
+    .status.ok { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .users-list { margin-top: 30px; }
+    .user-item { padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .user-info { flex: 1; }
+    .user-name { font-weight: bold; font-size: 16px; }
+    .user-meta { font-size: 12px; color: #666; margin-top: 5px; }
+    .user-actions { display: flex; gap: 10px; }
+    .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn-reset { background: #ffc107; color: black; }
+    .btn-reset:hover { background: #e0a800; }
+    .btn-delete { background: #dc3545; color: white; }
+    .btn-delete:hover { background: #c82333; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
+    .modal.show { display: flex; }
+    .modal-content { background: white; padding: 30px; border-radius: 8px; width: 90%; max-width: 400px; }
+    .modal-content input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+    .modal-content button { width: 100%; padding: 10px; margin-top: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .modal-content button:hover { background: #0056b3; }
+    .modal-close { background: #6c757d; }
+    .modal-close:hover { background: #5a6268; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Админ-панель</h1>
+    
+    <div class="auth">
+      <div id="status"></div>
+      <div id="authSection">
+        <h3>Вход в админ-панель</h3>
+        <input type="text" id="username" placeholder="Логин (min)" value="min">
+        <input type="password" id="password" placeholder="Пароль (1248)" value="1248">
+        <button onclick="doLogin()">Войти</button>
+      </div>
+      <div id="loggedIn" style="display: none;">
+        <p>✓ Вы вошли как: <strong id="currentUser"></strong></p>
+        <button onclick="doLogout()" style="background: #6c757d;">Выход</button>
+      </div>
+    </div>
+
+    <div id="adminPanel" style="display: none;">
+      <div class="users-list">
+        <h2>Управление пользователями</h2>
+        <div id="usersList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal для смены пароля -->
+  <div id="resetModal" class="modal">
+    <div class="modal-content">
+      <h3>Установить новый пароль</h3>
+      <p id="resetUsername"></p>
+      <input type="password" id="newPassword" placeholder="Новый пароль">
+      <button onclick="doResetPassword()">Установить</button>
+      <button class="modal-close" onclick="closeResetModal()">Отмена</button>
+    </div>
+  </div>
+
+  <!-- Modal для подтверждения удаления -->
+  <div id="deleteModal" class="modal">
+    <div class="modal-content">
+      <h3>⚠️ Подтверждение удаления</h3>
+      <p>Удалить аккаунт <strong id="deleteUsername"></strong>?</p>
+      <p style="font-size: 12px; color: #666; margin-top: 10px;">Это действие нельзя отменить. Все сообщения пользователя будут удалены.</p>
+      <button style="background: #dc3545;" onclick="doDelete()">Да, удалить</button>
+      <button class="modal-close" onclick="closeDeleteModal()">Отмена</button>
+    </div>
+  </div>
+
+  <!-- Modal для показа нового пароля -->
+  <div id="passwordModal" class="modal">
+    <div class="modal-content">
+      <h3>✓ Пароль установлен</h3>
+      <p>Пользователь: <strong id="passwordUsername"></strong></p>
+      <p style="margin-top: 15px; padding: 12px; background: #e7f3ff; border-radius: 4px; font-family: monospace; word-break: break-all;">
+        <strong>Новый пароль:</strong><br>
+        <span id="newPasswordDisplay" style="font-size: 16px; color: #0056b3;"></span>
+      </p>
+      <button onclick="copyPassword()" style="background: #28a745;">📋 Скопировать</button>
+      <button class="modal-close" onclick="closePasswordModal()">Закрыть</button>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let targetUsername = '';
+
+    async function doLogin() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        currentUser = data.user;
+        showStatus('✓ Вход успешен', 'ok');
+        document.getElementById('authSection').style.display = 'none';
+        document.getElementById('loggedIn').style.display = 'block';
+        document.getElementById('currentUser').textContent = currentUser.username;
+        document.getElementById('adminPanel').style.display = 'block';
+        loadUsers();
+      } else {
+        showStatus('✗ ' + (data.error || 'Ошибка входа'), 'error');
+      }
+    }
+
+    async function doLogout() {
+      await fetch('/api/logout', { method: 'POST' });
+      currentUser = null;
+      document.getElementById('authSection').style.display = 'block';
+      document.getElementById('loggedIn').style.display = 'none';
+      document.getElementById('adminPanel').style.display = 'none';
+      document.getElementById('username').value = 'min';
+      document.getElementById('password').value = '1248';
+    }
+
+    async function loadUsers() {
+      const res = await fetch('/api/admin/users');
+      const data = await res.json();
+      if (data.users) {
+        const html = data.users.map(u => `
+          <div class="user-item">
+            <div class="user-info">
+              <div class="user-name">${u.username} ${u.isAdmin ? '👑' : ''}</div>
+              <div class="user-meta">ID: ${u.id.substring(0, 8)}...</div>
+            </div>
+            <div class="user-actions">
+              ${u.username !== 'min' ? `
+                <button class="btn btn-reset" onclick="openResetModal('${u.username}')">🔑 Пароль</button>
+                <button class="btn btn-delete" onclick="openDeleteModal('${u.username}')">🗑️ Удалить</button>
+              ` : '<em style="font-size: 12px; color: #666;">Это вы (администратор)</em>'}
+            </div>
+          </div>
+        `).join('');
+        document.getElementById('usersList').innerHTML = html;
+      }
+    }
+
+    function openResetModal(username) {
+      targetUsername = username;
+      document.getElementById('resetUsername').textContent = `Пользователь: ${username}`;
+      document.getElementById('newPassword').value = '';
+      document.getElementById('resetModal').classList.add('show');
+    }
+
+    function closeResetModal() {
+      document.getElementById('resetModal').classList.remove('show');
+    }
+
+    async function doResetPassword() {
+      const newPassword = document.getElementById('newPassword').value;
+      if (!newPassword) {
+        showStatus('✗ Введите пароль', 'error');
+        return;
+      }
+      const res = await fetch(`/api/admin/users/${targetUsername}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        closeResetModal();
+        openPasswordModal(targetUsername, newPassword);
+      } else {
+        showStatus('✗ ' + (data.error || 'Ошибка'), 'error');
+      }
+    }
+
+    function openDeleteModal(username) {
+      targetUsername = username;
+      document.getElementById('deleteUsername').textContent = username;
+      document.getElementById('deleteModal').classList.add('show');
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').classList.remove('show');
+    }
+
+    function openPasswordModal(username, password) {
+      document.getElementById('passwordUsername').textContent = username;
+      document.getElementById('newPasswordDisplay').textContent = password;
+      document.getElementById('passwordModal').classList.add('show');
+    }
+
+    function closePasswordModal() {
+      document.getElementById('passwordModal').classList.remove('show');
+    }
+
+    function copyPassword() {
+      const pwd = document.getElementById('newPasswordDisplay').textContent;
+      navigator.clipboard.writeText(pwd).then(() => {
+        showStatus('✓ Пароль скопирован в буфер обмена', 'ok');
+      });
+    }
+
+    async function doDelete() {
+      const res = await fetch(`/api/admin/users/${targetUsername}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showStatus(`✓ Аккаунт ${targetUsername} удалён`, 'ok');
+        closeDeleteModal();
+        loadUsers();
+      } else {
+        showStatus('✗ ' + (data.error || 'Ошибка удаления'), 'error');
+      }
+    }
+
+    function showStatus(msg, type) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = 'status ' + type;
+      setTimeout(() => el.textContent = '', 5000);
+    }
+
+    // Проверяем, уже ли залогинены
+    fetch('/api/me').then(r => r.json()).then(data => {
+      if (data.user) {
+        currentUser = data.user;
+        document.getElementById('authSection').style.display = 'none';
+        document.getElementById('loggedIn').style.display = 'block';
+        document.getElementById('currentUser').textContent = currentUser.username;
+        document.getElementById('adminPanel').style.display = 'block';
+        loadUsers();
+      }
+    });
+  </script>
+</body>
+</html>

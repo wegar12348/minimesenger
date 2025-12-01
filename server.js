@@ -71,6 +71,16 @@ io.use((socket, next) => {
 
 app.use(express.static(path.join(__dirname, '')));
 
+// Ensure admin page is always reachable even if static serving behaves differently on host
+app.get('/admin.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// Friendly redirect
+app.get('/admin', (req, res) => {
+  res.redirect('/admin.html');
+});
+
 // Helper: find user by username
 async function findUser(username) {
   return await User.findOne({ username });

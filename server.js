@@ -8,7 +8,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 // Замените на вашу строку подключения. Рекомендуется хранить в переменных окружения.
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://RUD01f:<db_password>@cluster0.pdd4apt.mongodb.net/?appName=Cluster0";
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://RUD01f:<123489>@cluster0.pdd4apt.mongodb.net/?appName=Cluster0";
 const DB_NAME = 'miniMessenger';
 
 const app = express();

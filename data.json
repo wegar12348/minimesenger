@@ -1,4 +1,14 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": "3eb0bff1-4618-4679-af9b-1f4096fa4fdc",
+      "username": "Rudolf",
+      "password": "$2a$08$K22SjKllmAkKFyibyVzXI.3DWVTjljJVwhccySQkiZQYw4bK0WA/i",
+      "display": "Рудольф",
+      "friends": [
+        "Rudolf"
+      ]
+    }
+  ],
   "messages": []
 }
